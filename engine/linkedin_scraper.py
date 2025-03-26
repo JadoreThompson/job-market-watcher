@@ -1,10 +1,11 @@
 import asyncio
 import json
 import logging
+from multiprocessing import Queue
 
 from httpx import AsyncClient, ReadTimeout
 from random import random
-from playwright.async_api import async_playwright, Page, Locator
+from playwright.async_api import async_playwright, Page, Locator, TimeoutError
 from sqlalchemy import insert
 from typing import List
 
@@ -12,17 +13,29 @@ from config import CANARY_EXE_PATH, CANARY_USER_DATA_PATH, LLM_API_KEY, LLM_BASE
 from db_models import ScrapedData
 from utils.db import get_db_session
 from .models import LLMExtractedObject, InitialExtractedObject
-from .exc import LLMAPIError
+from .exc import LLMAPIError, ScrapingError
 
 logger = logging.getLogger(__name__)
 
 
-class Scraper:
-    def __init__(self, url: str, *, sleep: int = 2, timeout: int = 5) -> None:
+class LinkedInScraper:
+    """
+    Scraper designed to scrape LinkedIn job listings.
+
+    Attributes:
+        url (str): The URL to scrape
+        clean_queue (Queue): The queue used to transport data to the cleaner
+        sleep (int): The time to sleep between scraping individual cards
+        timeout (int): The time to wait before going to the next page
+        queue (asyncio.Queue): The queue used to transport data to the LLM handler 
+    """
+
+    def __init__(self, url: str, clean_queue: Queue, *, sleep: int = 2, timeout: int = 5) -> None:
         self._url = url
         self._sleep = sleep
         self._timeout = timeout
         self._queue = asyncio.Queue()
+        self._clean_queue = clean_queue
 
     async def init(self) -> None:
         asyncio.create_task(self._handle_llm())
@@ -84,13 +97,17 @@ class Scraper:
         data: List[InitialExtractedObject] = []
 
         for card in cards:
-            data.append(await self._scrape_card(page, card))
-            await asyncio.sleep(self._sleep)
+            try:
+                data.append(await self._scrape_card(page, card))
+                await asyncio.sleep(self._sleep)
 
-            if dimensions := await card.bounding_box():
-                await page.mouse.wheel(0, dimensions["height"])
+                if dimensions := await card.bounding_box():
+                    await page.mouse.wheel(0, dimensions["height"])
+            except ScrapingError:
+                pass
 
-        self._queue.put_nowait(data)
+        if data:
+            self._queue.put_nowait(data)
 
     async def _locate_cards(self, page: Page) -> List[Locator]:
         cards = await page.locator("li[data-occludable-job-id]").all()
@@ -102,21 +119,24 @@ class Scraper:
     ) -> InitialExtractedObject:
         await li_card.click()
 
-        payload = InitialExtractedObject(
-            url=page.url,
-            title=await page.locator(
-                ".t-24.job-details-jobs-unified-top-card__job-title a"
-            ).text_content(),
-            company=await page.locator(
-                "div.job-details-jobs-unified-top-card__company-name a"
-            ).text_content(),
-            location=await (
-                await page.locator(
-                    ".t-black--light.mt2.job-details-jobs-unified-top-card__tertiary-description-container span"
-                ).all()
-            )[0].text_content(),
-            content=await page.locator("div.jobs-box__html-content").inner_html(),
-        )
+        try:
+            payload = InitialExtractedObject(
+                url=page.url,
+                title=await page.locator(
+                    ".t-24.job-details-jobs-unified-top-card__job-title a"
+                ).text_content(),
+                company=await page.locator(
+                    ".job-details-jobs-unified-top-card__company-name a"
+                ).text_content(),
+                location=await (
+                    await page.locator(
+                        ".t-black--light.mt2.job-details-jobs-unified-top-card__tertiary-description-container span"
+                    ).all()
+                )[0].text_content(),
+                content=await page.locator("div.jobs-box__html-content").inner_html(),
+            )
+        except (TimeoutError, IndexError) as e:
+            raise ScrapingError(str(e))
 
         return payload
 
@@ -204,6 +224,7 @@ class Scraper:
                         )
                     )
                     await sess.commit()
+                self._clean_queue.put_nowait(cleaned_data)
                 logger.info("Data inserted into database")
 
     @property

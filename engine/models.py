@@ -1,6 +1,6 @@
 import json
 from typing import List, Optional
-from pydantic import BaseModel, field_serializer
+from pydantic import BaseModel, field_serializer, field_validator
 
 
 class CustomBaseModel(BaseModel):
@@ -11,6 +11,7 @@ class InitialExtractedObject(CustomBaseModel):
     url: str
     title: str  # Job Title
     company: str
+    location: str
     content: str  # Page Content
 
 
@@ -19,7 +20,7 @@ class LLMExtractedObject(CustomBaseModel):
     title: str
     company: str
     salary: Optional[str] = None
-    location: Optional[str] = None
+    location: str
     responsibilities: Optional[List[str]] = None
     requirements: List[str]
     extras: Optional[List[str]] = None

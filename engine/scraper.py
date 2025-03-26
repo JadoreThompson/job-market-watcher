@@ -29,7 +29,7 @@ class Scraper:
         await self.run_scraper()
 
     async def run_scraper(self) -> None:
-        await asyncio.sleep(random() * 50)
+        await asyncio.sleep(random() * 50)  # Rate limit prevention
         async with async_playwright() as p:
             browser = await p.chromium.launch_persistent_context(
                 user_data_dir=CANARY_USER_DATA_PATH,
@@ -110,6 +110,11 @@ class Scraper:
             company=await page.locator(
                 "div.job-details-jobs-unified-top-card__company-name a"
             ).text_content(),
+            location=await (
+                await page.locator(
+                    ".t-black--light.mt2.job-details-jobs-unified-top-card__tertiary-description-container span"
+                ).all()
+            )[0].text_content(),
             content=await page.locator("div.jobs-box__html-content").inner_html(),
         )
 
@@ -125,7 +130,6 @@ class Scraper:
         Attributes:
             - salary of the role. For example "$100,000 - $120,000" or "Competitive" 
             or "Not specified" or "$500 per hour"
-            - location of the role
             - responsibilities of the role as a list of strings. For example 
             ["Designing and developing applications", "Writing clean code"]
             - requirements of the role as a list of strings. For example 
@@ -134,11 +138,11 @@ class Scraper:
         Ensure you extract the attributes and send them back to me in a JSON with keys. 
         This is a strict response schema. I only want this JSON schema within the response. 
 
-        The only keys you should have in the JSON are:
-            - salary
-            - location
-            - responsibilities
-            - requirements
+        I'm now going to show you the only JSON schema I will accept along with their
+        associated python type.
+            - salary: str
+            - responsibilities: List[str]
+            - requirements: List[str]
             
         This is a strict requirement. Failure to follow this schema will result in a failed response.
             
@@ -148,6 +152,7 @@ class Scraper:
         I've attached the data for you to parse below:
         {data}
         """
+        # The only keys you should have in the JSON are:
         rsp = await session.post(
             LLM_BASE_URL + "/agents/completions",
             json={
@@ -166,7 +171,7 @@ class Scraper:
             .replace("```json", "")
             .replace("```", "")
         )
-
+        print(content)
         return json.loads(content)
 
     async def _handle_llm(self) -> None:
@@ -204,11 +209,3 @@ class Scraper:
     @property
     def url(self) -> str:
         return self._url
-
-
-if __name__ == "__main__":
-    asyncio.run(
-        Scraper(
-            "https://www.linkedin.com/jobs/search/?&keywords=software%20engineer"
-        ).run_scraper()
-    )

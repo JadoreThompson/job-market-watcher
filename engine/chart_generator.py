@@ -7,7 +7,6 @@ class ChartGenerator:
         pass
 
     async def run(self) -> None:
-        # asyncio.create_task(self._listen())
         await self._listen()
 
     async def _listen(self) -> None:

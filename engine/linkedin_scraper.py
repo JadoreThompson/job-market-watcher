@@ -85,35 +85,19 @@ class LinkedInScraper:
 
         while not finished:
             await page.wait_for_selector(".scaffold-layout__list")
-            await self._scrape_page(page)
+            if not await self._scrape_page(page):
+                break
             logger.info("Finished scrape on individual cards ")
 
-            paginations: List[Locator] = await page.locator(
-                "ul.artdeco-pagination__pages.artdeco-pagination__pages--number li"
-            ).all()
-
+            await asyncio.sleep(self._timeout)
+            cur_page += 1
             await page.goto(self._url + f"&start={cur_page * 25}")
-            # found_next_page = False
-            # for pbtn in paginations:
-            #     if (
-            #         await pbtn.get_attribute("data-test-pagination-page-btn")
-            #         == f"{cur_page + 1}"
-            #     ):
-            #         found_next_page = True
-            #         await asyncio.sleep(self._timeout)
-            #         logger.info(f"Heading to Page: {cur_page + 1}")
-            #         await pbtn.click()
-            #         cur_page += 1
-            #         break
-
-            # if not found_next_page:
-            #     break
-
+            
     async def _scrape_page(self, page: Page) -> None:
         cards = await self._locate_cards(page)
-
         if not cards:
             logger.info("No cards located")
+            return False
 
         logger.info("Beginning scrape on individual cards")
 
@@ -132,6 +116,8 @@ class LinkedInScraper:
 
         if data:
             self._queue.put_nowait(data)
+        
+        return True
 
     async def _locate_cards(self, page: Page) -> List[Locator]:
         cards = await page.locator("li[data-occludable-job-id]").all()
@@ -196,7 +182,6 @@ class LinkedInScraper:
         I've attached the data for you to parse below:
         {data}
         """
-        # The only keys you should have in the JSON are:
         try:
             rsp = await session.post(
                 LLM_BASE_URL + "/agents/completions",
@@ -260,7 +245,8 @@ class LinkedInScraper:
                         )
                     )
                     await sess.commit()
-                self._clean_queue.put_nowait(cleaned_data)
+                
+                self._clean_queue.put_nowait(cleaned_data.copy())
                 logger.info("Data inserted into database")
                 cleaned_data.clear()
 

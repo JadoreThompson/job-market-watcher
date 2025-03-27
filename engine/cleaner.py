@@ -1,4 +1,5 @@
 import asyncio
+import json
 import regex
 
 from logging import getLogger
@@ -17,7 +18,6 @@ from .models import LLMExtractedObject, CleanedDataObject
 logger = getLogger(__name__)
 
 
-# Designed to be ran within it's own process
 class Cleaner:
     """
     Cleans the extracted data and inserts it into the database
@@ -114,4 +114,4 @@ class Cleaner:
 
     async def _transport(self, data: List[dict]) -> None:
         logger.info("Transporting data to chart generator")
-        await REDIS_CLIENT.publish(CLEANED_DATA_KEY, data)
+        await REDIS_CLIENT.publish(CLEANED_DATA_KEY, json.dumps(data))

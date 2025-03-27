@@ -8,6 +8,7 @@ from typing import List, Optional
 
 
 from sqlalchemy.dialects.postgresql import insert
+from config import CLEANED_DATA_KEY, REDIS_CLIENT
 from db_models import CleanedData
 from utils.db import get_db_session
 from .models import LLMExtractedObject, CleanedDataObject
@@ -37,23 +38,15 @@ class Cleaner:
             try:
                 extracted_data: List[LLMExtractedObject] = self._queue.get(block=True)
                 logger.info(f"Cleaning {len(extracted_data)} items")
-                
+
                 for data in extracted_data:
                     cleaned_data.append(self.clean(data))
 
                 logger.info("Finished cleaning data")
                 if cleaned_data:
-                    logger.info("Inserting data into the database")
-                    async with get_db_session() as sess:
-                        await sess.execute(
-                            insert(CleanedData)
-                            .values(cleaned_data)
-                            .on_conflict_do_nothing()
-                        )
-                        await sess.commit()
-                    
-                    logger.info("Data inserted into the database")
-                cleaned_data.clear()
+                    await self._persist(cleaned_data)
+                    await self._transport(cleaned_data)
+                    cleaned_data.clear()
             except Empty:
                 await asyncio.sleep(self.sleep)
 
@@ -108,3 +101,17 @@ class Cleaner:
             return float(remove_accessories(matched_string.group()))
 
         return None
+
+    async def _persist(self, data: List[dict]) -> None:
+        logger.info("Inserting data into the database")
+        async with get_db_session() as sess:
+            await sess.execute(
+                insert(CleanedData).values(data).on_conflict_do_nothing()
+            )
+            await sess.commit()
+
+        logger.info("Data inserted into the database")
+
+    async def _transport(self, data: List[dict]) -> None:
+        logger.info("Transporting data to chart generator")
+        await REDIS_CLIENT.publish(CLEANED_DATA_KEY, data)

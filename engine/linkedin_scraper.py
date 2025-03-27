@@ -73,13 +73,14 @@ class LinkedInScraper:
                 await page.goto(self._url)
                 await self._handle(page)
                 logger.info("Scraping finished")
+                await asyncio.sleep(10 ** 10)
         except Exception as e:
             logger.error(f"An error occurred: {e}")
         finally:
             self._is_running = False
 
     async def _handle(self, page: Page) -> None:
-        cur_page = 1
+        cur_page = 0
         finished = False
 
         while not finished:
@@ -91,21 +92,22 @@ class LinkedInScraper:
                 "ul.artdeco-pagination__pages.artdeco-pagination__pages--number li"
             ).all()
 
-            found_next_page = False
-            for pbtn in paginations:
-                if (
-                    await pbtn.get_attribute("data-test-pagination-page-btn")
-                    == f"{cur_page + 1}"
-                ):
-                    found_next_page = True
-                    await asyncio.sleep(self._timeout)
-                    logger.info(f"Heading to Page: {cur_page + 1}")
-                    await pbtn.click()
-                    cur_page += 1
-                    break
+            await page.goto(self._url + f"&start={cur_page * 25}")
+            # found_next_page = False
+            # for pbtn in paginations:
+            #     if (
+            #         await pbtn.get_attribute("data-test-pagination-page-btn")
+            #         == f"{cur_page + 1}"
+            #     ):
+            #         found_next_page = True
+            #         await asyncio.sleep(self._timeout)
+            #         logger.info(f"Heading to Page: {cur_page + 1}")
+            #         await pbtn.click()
+            #         cur_page += 1
+            #         break
 
-            if not found_next_page:
-                break
+            # if not found_next_page:
+            #     break
 
     async def _scrape_page(self, page: Page) -> None:
         cards = await self._locate_cards(page)
@@ -125,7 +127,8 @@ class LinkedInScraper:
                 if dimensions := await card.bounding_box():
                     await page.mouse.wheel(0, dimensions["height"])
             except ScrapingError as e:
-                warnings.warn(f"Error whilst scraping: {str(e)}")
+                m = f"Error whilst scraping: {str(e)}"
+                warnings.warn(m)
 
         if data:
             self._queue.put_nowait(data)

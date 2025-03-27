@@ -1,7 +1,9 @@
 import uvicorn
 import time
 import asyncio
+
 from multiprocessing import Process, Queue
+from engine.chart_generator import ChartGenerator
 from engine.linkedin_scraper import LinkedInScraper
 from engine.cleaner import Cleaner
 
@@ -22,6 +24,10 @@ def cleaner(queue: Queue) -> None:
     asyncio.run(Cleaner(queue).run())
 
 
+def chart_generator() -> None:
+    asyncio.run(ChartGenerator().run())
+
+
 def main() -> None:
     clean_queue = Queue()
 
@@ -29,6 +35,7 @@ def main() -> None:
         {"target": server, "args": (), "name": "server"},
         {"target": scraper, "args": (clean_queue,), "name": "scraper"},
         {"target": cleaner, "args": (clean_queue,), "name": "cleaner"},
+        {"target": chart_generator, "args": (), "name": "chart_generator"},
     )
 
     processes = [Process(**kwargs) for kwargs in process_kwargs]

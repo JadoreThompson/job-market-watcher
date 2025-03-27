@@ -55,3 +55,6 @@ REDIS_CLIENT = Redis(
         password=REDIS_PASSWORD,
     ),
 )
+
+CLEANED_DATA_KEY = os.getenv("CLEANED_DATA_KEY")
+BAR_CHART_KEY = os.getenv("BAR_CHART_KEY")

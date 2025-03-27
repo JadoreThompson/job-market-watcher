@@ -1,15 +1,19 @@
 import asyncio
 import regex
+
+from logging import getLogger
 from multiprocessing import Queue
 from queue import Empty
 from typing import List, Optional
 
-# from sqlalchemy import insert
-from sqlalchemy.dialects.postgresql import insert
 
+from sqlalchemy.dialects.postgresql import insert
 from db_models import CleanedData
 from utils.db import get_db_session
 from .models import LLMExtractedObject, CleanedDataObject
+
+
+logger = getLogger(__name__)
 
 
 # Designed to be ran within it's own process
@@ -31,17 +35,24 @@ class Cleaner:
 
         while True:
             try:
-                for d in self._queue.get(block=True):
-                    cleaned_data.append(self.clean(d))
-
-                async with get_db_session() as sess:
-                    await sess.execute(
-                        insert(CleanedData)
-                        .values(cleaned_data)
-                        .on_conflict_do_nothing()
-                    )
-                    await sess.commit()
+                extracted_data: List[LLMExtractedObject] = self._queue.get(block=True)
+                logger.info(f"Cleaning {len(extracted_data)} items")
                 
+                for data in extracted_data:
+                    cleaned_data.append(self.clean(data))
+
+                logger.info("Finished cleaning data")
+                if cleaned_data:
+                    logger.info("Inserting data into the database")
+                    async with get_db_session() as sess:
+                        await sess.execute(
+                            insert(CleanedData)
+                            .values(cleaned_data)
+                            .on_conflict_do_nothing()
+                        )
+                        await sess.commit()
+                    
+                    logger.info("Data inserted into the database")
                 cleaned_data.clear()
             except Empty:
                 await asyncio.sleep(self.sleep)
@@ -72,7 +83,7 @@ class Cleaner:
 
         # £60,000 - £70,000 annually
         range_exp = r"[£$€]\d{1,3}(?:,\d{3})?\s*-\s*[£$€]?\d{1,3}(?:,\d{3})?"
-        if matched_string := regex.match(range_exp, salary):
+        if matched_string := regex.search(range_exp, salary):
             # print(" 1 ", end="")
             num1, num2 = [
                 (
@@ -91,8 +102,8 @@ class Cleaner:
             return float(remove_accessories(matched_string.group()))
 
         # £60,000 annually
-        padding_exp = r"([£$€]\d{1,3}(?:,\d{3})?)"
-        if matched_string := regex.match(padding_exp, salary):
+        padding_exp = r"[£$€]\d{1,3}(?:,\d{3})?"
+        if matched_string := regex.search(padding_exp, salary):
             # print(" 2 ", end="")
             return float(remove_accessories(matched_string.group()))
 

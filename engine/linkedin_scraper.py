@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import warnings
 
 from httpx import AsyncClient, ReadTimeout
 from multiprocessing import Queue
@@ -98,6 +99,7 @@ class LinkedInScraper:
                 ):
                     found_next_page = True
                     await asyncio.sleep(self._timeout)
+                    logger.info(f"Heading to Page: {cur_page + 1}")
                     await pbtn.click()
                     cur_page += 1
                     break
@@ -122,8 +124,8 @@ class LinkedInScraper:
 
                 if dimensions := await card.bounding_box():
                     await page.mouse.wheel(0, dimensions["height"])
-            except ScrapingError:
-                pass
+            except ScrapingError as e:
+                warnings.warn(f"Error whilst scraping: {str(e)}")
 
         if data:
             self._queue.put_nowait(data)
@@ -217,7 +219,7 @@ class LinkedInScraper:
 
             return json.loads(content)
         except (LLMError, json.JSONDecodeError) as e:
-            raise LLMError(("" if isinstance(e, LLMError) else type(e)) + str(e))
+            raise LLMError(("" if isinstance(e, LLMError) else f"{type(e)}") + str(e))
 
     async def _handle_llm(self) -> None:
         cleaned_data: List[LLMExtractedObject] = []
@@ -244,8 +246,9 @@ class LinkedInScraper:
 
                     await asyncio.sleep(self._llm_rate_limit * (1 + random()))
 
-            if len(cleaned_data):
-                logger.info("Finished processing data")
+            logger.info("Finished processing data")
+            
+            if cleaned_data:
                 logger.info("Inserting data into database")
                 async with get_db_session() as sess:
                     await sess.execute(
@@ -256,6 +259,7 @@ class LinkedInScraper:
                     await sess.commit()
                 self._clean_queue.put_nowait(cleaned_data)
                 logger.info("Data inserted into database")
+                cleaned_data.clear()
 
     @property
     def url(self) -> str:

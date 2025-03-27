@@ -1,7 +1,10 @@
 import os
 import logging
+
 from dotenv import load_dotenv
+from redis.asyncio import Redis, ConnectionPool, Connection
 from sqlalchemy.ext.asyncio import create_async_engine
+from typing import Optional
 from urllib.parse import quote
 
 load_dotenv()
@@ -25,11 +28,30 @@ DB_ENGINE = create_async_engine(
     pool_recycle=6000,
 )
 
+# LLM
+LLM_API_KEY = os.getenv("LLM_API_KEY")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL")
 
 # Playwright
 CANARY_USER_DATA_PATH = os.getenv("CANARY_USER_DATA_DIR")
 CANARY_EXE_PATH = os.getenv("CANARY_EXEC_PATH")
 
-# LLM
-LLM_API_KEY = os.getenv("MISTRAL_API_KEY")
-LLM_BASE_URL = os.getenv("MISTRAL_BASE_URL")
+# Redis
+REDIS_HOST = os.getenv("REDIS_HOST")
+REDIS_PORT = int(os.getenv("REDIS_PORT"))
+REDIS_PASSWORD: Optional[str] = os.getenv("REDIS_PASSWORD")
+
+REDIS_CLIENT = Redis(
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    password=REDIS_PASSWORD,
+    max_connections=20,
+    decode_responses=True,
+    connection_pool=ConnectionPool(
+        connection_class=Connection,
+        max_connections=20,
+        host=REDIS_HOST,
+        port=REDIS_PORT,
+        password=REDIS_PASSWORD,
+    ),
+)

@@ -1,6 +1,6 @@
 import uvicorn
-from asyncio import run
-from time import sleep
+import time
+import asyncio
 from multiprocessing import Process, Queue
 from engine.linkedin_scraper import LinkedInScraper
 from engine.cleaner import Cleaner
@@ -11,7 +11,7 @@ def server() -> None:
 
 
 def scraper(queue: Queue) -> None:
-    run(
+    asyncio.run(
         LinkedInScraper(
             "https://www.linkedin.com/jobs/search/?&keywords=software%20engineer", queue
         ).init()
@@ -19,7 +19,7 @@ def scraper(queue: Queue) -> None:
 
 
 def cleaner(queue: Queue) -> None:
-    run(Cleaner(queue).run())
+    asyncio.run(Cleaner(queue).run())
 
 
 def main() -> None:
@@ -37,22 +37,25 @@ def main() -> None:
         process.start()
 
     try:
-        for i in range(len(processes)):
-            processes[i].join()
-
-            if not processes[i].is_alive():
-                print(f"[main] {process_kwargs[i]['name']} has shut down")
-                process.kill()
-                processes[i] = Process(**process_kwargs[i])
-                processes[i].start()
-                print(f"[main] Restarted {process_kwargs[i]['name']}")
-
-        sleep(1)
+        while True:
+            for i in range(len(processes)):
+                if not processes[i].is_alive():
+                    print(
+                        f"[main] {process_kwargs[i]['name']} PID: {processes[i].pid} has shut down"
+                    )
+                    processes[i].kill()
+                    processes[i].join()
+                    processes[i] = Process(**process_kwargs[i])
+                    processes[i].start()
+                    print(f"[main] Restarted {process_kwargs[i]['name']}")
+            time.sleep(5)
     except BaseException:
         print("[main] Shutting down...")
 
         for i in range(len(processes)):
-            print(f"[main] Shutting down {process_kwargs[i]['name']}")
+            print(
+                f"[main] Shutting down {process_kwargs[i]['name']} PID: {processes[i].pid}"
+            )
             processes[i].terminate()
             processes[i].join()
             print(f"[main] {process_kwargs[i]['name']} has shut down")

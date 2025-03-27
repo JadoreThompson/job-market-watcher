@@ -3,6 +3,12 @@ import regex
 from multiprocessing import Queue
 from queue import Empty
 from typing import List, Optional
+
+# from sqlalchemy import insert
+from sqlalchemy.dialects.postgresql import insert
+
+from db_models import CleanedData
+from utils.db import get_db_session
 from .models import LLMExtractedObject
 
 
@@ -18,6 +24,10 @@ class Cleaner:
                 data: List[LLMExtractedObject] = self._queue.get(block=True)
                 for d in data:
                     self.clean(d)
+
+                async with get_db_session() as sess:
+                    await sess.execute(insert(CleanedData).values(data))
+
             except Empty:
                 await asyncio.sleep(self.sleep)
 

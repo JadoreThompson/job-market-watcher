@@ -13,7 +13,7 @@ from config import CANARY_EXE_PATH, CANARY_USER_DATA_PATH, LLM_API_KEY, LLM_BASE
 from db_models import ScrapedData
 from utils.db import get_db_session
 from .models import LLMExtractedObject, InitialExtractedObject
-from .exc import LLMAPIError, ScrapingError
+from .exc import LLMError, ScrapingError
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +27,12 @@ class LinkedInScraper:
         clean_queue (Queue): The queue used to transport data to the cleaner
         sleep (int): The time to sleep between scraping individual cards
         timeout (int): The time to wait before going to the next page
-        queue (asyncio.Queue): The queue used to transport data to the LLM handler 
+        queue (asyncio.Queue): The queue used to transport data to the LLM handler
     """
 
-    def __init__(self, url: str, clean_queue: Queue, *, sleep: int = 2, timeout: int = 5) -> None:
+    def __init__(
+        self, url: str, clean_queue: Queue, *, sleep: int = 2, timeout: int = 5
+    ) -> None:
         self._url = url
         self._sleep = sleep
         self._timeout = timeout
@@ -44,7 +46,7 @@ class LinkedInScraper:
 
     async def run_scraper(self) -> None:
         await asyncio.sleep(random() * 50)  # Rate limit prevention
-        
+
         try:
             async with async_playwright() as p:
                 browser = await p.chromium.launch_persistent_context(
@@ -54,7 +56,7 @@ class LinkedInScraper:
                 )
                 self._is_running = True
                 logger.info("Browser initialised")
-                
+
                 page = await browser.new_page()
                 logger.info("Page initialised")
 
@@ -182,33 +184,39 @@ class LinkedInScraper:
         {data}
         """
         # The only keys you should have in the JSON are:
-        rsp = await session.post(
-            LLM_BASE_URL + "/agents/completions",
-            json={
-                "agent_id": "ag:a205eb03:20250326:untitled-agent:a2ed9362",
-                "messages": [
-                    {"role": "user", "content": template.format(data=payload.content)}
-                ],
-            },
-        )
+        try:
+            rsp = await session.post(
+                LLM_BASE_URL + "/agents/completions",
+                json={
+                    "agent_id": "ag:a205eb03:20250326:untitled-agent:a2ed9362",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": template.format(data=payload.content),
+                        }
+                    ],
+                },
+            )
 
-        if rsp.status_code != 200:
-            raise LLMAPIError(f"Failed to fetch attributes. Status: {rsp.status_code}")
+            if rsp.status_code != 200:
+                raise LLMError(f"Failed to fetch attributes. Status: {rsp.status_code}")
 
-        content = (
-            rsp.json()["choices"][0]["message"]["content"]
-            .replace("```json", "")
-            .replace("```", "")
-        )
-        # print(content)
-        return json.loads(content)
+            content = (
+                rsp.json()["choices"][0]["message"]["content"]
+                .replace("```json", "")
+                .replace("```", "")
+            )
+
+            return json.loads(content)
+        except (LLMError, json.JSONDecodeError) as e:
+            raise LLMError(("" if isinstance(e, LLMError) else type(e)) + str(e))
 
     async def _handle_llm(self) -> None:
         cleaned_data: List[LLMExtractedObject] = []
 
         while not self._is_running:
             await asyncio.sleep(1)
-        
+
         while self._is_running:
             payloads: List[InitialExtractedObject] = await self._queue.get()
 
@@ -223,7 +231,7 @@ class LinkedInScraper:
                         cleaned_data.append(
                             LLMExtractedObject(**payload.model_dump(), **extracted_data)
                         )
-                    except (ReadTimeout, LLMAPIError):
+                    except (ReadTimeout, LLMError):
                         pass
 
             if len(cleaned_data):

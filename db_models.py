@@ -23,7 +23,7 @@ class CleanedData(Base):
     __tablename__ = "cleaned_data"
 
     id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
-    url: Mapped[str] = Column(String, nullable=False)
+    url: Mapped[str] = Column(String, nullable=False, unique=True)
     title: Mapped[str] = Column(String, nullable=False)
     company: Mapped[str] = Column(String, nullable=False)
     salary: Mapped[float] = Column(Integer, nullable=True)

@@ -36,6 +36,7 @@ class LinkedInScraper:
         self._timeout = timeout
         self._queue = asyncio.Queue()
         self._clean_queue = clean_queue
+        self._is_running = False
 
     async def init(self) -> None:
         asyncio.create_task(self._handle_llm())
@@ -43,20 +44,28 @@ class LinkedInScraper:
 
     async def run_scraper(self) -> None:
         await asyncio.sleep(random() * 50)  # Rate limit prevention
-        async with async_playwright() as p:
-            browser = await p.chromium.launch_persistent_context(
-                user_data_dir=CANARY_USER_DATA_PATH,
-                headless=False,
-                executable_path=CANARY_EXE_PATH,
-            )
-            logger.info("Browser initialised")
-            page = await browser.new_page()
-            logger.info("Page initialised")
+        
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch_persistent_context(
+                    user_data_dir=CANARY_USER_DATA_PATH,
+                    headless=False,
+                    executable_path=CANARY_EXE_PATH,
+                )
+                self._is_running = True
+                logger.info("Browser initialised")
+                
+                page = await browser.new_page()
+                logger.info("Page initialised")
 
-            logger.info("Heading to URL")
-            await page.goto(self._url)
-            await self._handle(page)
-            logger.info("Scraping finished")
+                logger.info("Heading to URL")
+                await page.goto(self._url)
+                await self._handle(page)
+                logger.info("Scraping finished")
+        except Exception as e:
+            logger.error(f"An error occurred: {e}")
+        finally:
+            self._is_running = False
 
     async def _handle(self, page: Page) -> None:
         cur_page = 1
@@ -191,13 +200,16 @@ class LinkedInScraper:
             .replace("```json", "")
             .replace("```", "")
         )
-        print(content)
+        # print(content)
         return json.loads(content)
 
     async def _handle_llm(self) -> None:
         cleaned_data: List[LLMExtractedObject] = []
 
-        while True:
+        while not self._is_running:
+            await asyncio.sleep(1)
+        
+        while self._is_running:
             payloads: List[InitialExtractedObject] = await self._queue.get()
 
             async with AsyncClient(

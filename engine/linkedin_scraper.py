@@ -28,16 +28,24 @@ class LinkedInScraper:
         sleep (int): The time to sleep between scraping individual cards
         timeout (int): The time to wait before going to the next page
         queue (asyncio.Queue): The queue used to transport data to the LLM handler
+        llm_rate_limit (int): The rate limit in seconds for LLM API requests
     """
 
     def __init__(
-        self, url: str, clean_queue: Queue, *, sleep: int = 2, timeout: int = 5
+        self,
+        url: str,
+        clean_queue: Queue,
+        *,
+        sleep: int = 2,
+        timeout: int = 5,
+        llm_rate_limit: int = 1,
     ) -> None:
         self._url = url
         self._sleep = sleep
         self._timeout = timeout
         self._queue = asyncio.Queue()
         self._clean_queue = clean_queue
+        self._llm_rate_limit = llm_rate_limit
         self._is_running = False
 
     async def init(self) -> None:
@@ -76,7 +84,7 @@ class LinkedInScraper:
         while not finished:
             await page.wait_for_selector(".scaffold-layout__list")
             await self._scrape_page(page)
-            logger.info("Finished scrape on individual cards " + __name__)
+            logger.info("Finished scrape on individual cards ")
 
             paginations: List[Locator] = await page.locator(
                 "ul.artdeco-pagination__pages.artdeco-pagination__pages--number li"
@@ -233,6 +241,8 @@ class LinkedInScraper:
                         )
                     except (ReadTimeout, LLMError):
                         pass
+
+                    await asyncio.sleep(self._llm_rate_limit * (1 + random()))
 
             if len(cleaned_data):
                 logger.info("Finished processing data")

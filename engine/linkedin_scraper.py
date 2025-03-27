@@ -1,9 +1,9 @@
 import asyncio
 import json
 import logging
-from multiprocessing import Queue
 
 from httpx import AsyncClient, ReadTimeout
+from multiprocessing import Queue
 from random import random
 from playwright.async_api import async_playwright, Page, Locator, TimeoutError
 from sqlalchemy import insert

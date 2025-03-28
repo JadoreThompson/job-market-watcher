@@ -21,11 +21,12 @@ class LLMExtractedObject(CustomBaseModel):
     company: str
     salary: Optional[str] = None
     location: str
+    programming_languages: List[str]
     responsibilities: Optional[List[str]] = None
     requirements: List[str]
     extras: Optional[List[str]] = None
 
-    @field_serializer("responsibilities", "requirements", "extras")
+    @field_serializer("programming_languages", "responsibilities", "requirements", "extras")
     def serialize_list(self, value: Optional[List[str]]) -> str:
         return json.dumps(value) if value is not None else None
     
@@ -36,6 +37,8 @@ class CleanedDataObject(CustomBaseModel):
     company: str
     salary: Optional[float] = None
     location: str
+    programming_languages: str
     responsibilities: Optional[str] = None
     requirements: str
     extras: Optional[str] = None
+    

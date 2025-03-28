@@ -44,7 +44,7 @@ class Cleaner:
 
                 logger.info("Finished cleaning data")
                 if cleaned_data:
-                    await self._persist(cleaned_data)
+                    # await self._persist(cleaned_data)
                     await self._transport(cleaned_data)
                     cleaned_data.clear()
             except Empty:
@@ -75,7 +75,7 @@ class Cleaner:
             )
 
         # £60,000 - £70,000 annually
-        range_exp = r"[£$€]\d{1,3}(?:,\d{3})?\s*-\s*[£$€]?\d{1,3}(?:,\d{3})?"
+        range_exp = r"£\d{1,3}(,\d{3})?\s*-\s*£\d{1,3}(,\d{3})?"
         if matched_string := regex.search(range_exp, salary):
             # print(" 1 ", end="")
             num1, num2 = [

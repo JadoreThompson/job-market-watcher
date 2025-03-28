@@ -15,6 +15,7 @@ from db_models import ScrapedData
 from utils.db import get_db_session
 from .models import LLMExtractedObject, InitialExtractedObject
 from .exc import LLMError, ScrapingError
+from .utils import PROGRAMMING_LANGUAGES
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ class LinkedInScraper:
                 await page.goto(self._url)
                 await self._handle(page)
                 logger.info("Scraping finished")
-                await asyncio.sleep(10 ** 10)
+                await asyncio.sleep(10**10)
         except Exception as e:
             logger.error(f"An error occurred: {e}")
         finally:
@@ -92,7 +93,7 @@ class LinkedInScraper:
             await asyncio.sleep(self._timeout)
             cur_page += 1
             await page.goto(self._url + f"&start={cur_page * 25}")
-            
+
     async def _scrape_page(self, page: Page) -> None:
         cards = await self._locate_cards(page)
         if not cards:
@@ -116,7 +117,7 @@ class LinkedInScraper:
 
         if data:
             self._queue.put_nowait(data)
-        
+
         return True
 
     async def _locate_cards(self, page: Page) -> List[Locator]:
@@ -153,17 +154,21 @@ class LinkedInScraper:
     async def _fetch_attributes(
         self, payload: InitialExtractedObject, session: AsyncClient
     ) -> dict:
-        template = """"\
-        You're an expert JSON parser, able to extract the following attributes from
-        the data I've attached.\
+        template = f""""\
+        You're an expert JSON parser, able to extract key insights from HTML code
+        . Your job is to extract the following insights from
+        the data I've attached.
         
         Attributes:
             - salary of the role. For example "$100,000 - $120,000" or "Competitive" 
             or "Not specified" or "$500 per hour"
+            - programming languages required for the role. You must only include these languages {PROGRAMMING_LANGUAGES}
             - responsibilities of the role as a list of strings. For example 
             ["Designing and developing applications", "Writing clean code"]
             - requirements of the role as a list of strings. For example 
             ["3+ years of experience", "Strong communication skills"]
+            - extras. These are a collection of keywords that can be used to associate the job positing.
+            For example ["quantitative development", "fintech"].
             
         Ensure you extract the attributes and send them back to me in a JSON with keys. 
         This is a strict response schema. I only want this JSON schema within the response. 
@@ -171,8 +176,10 @@ class LinkedInScraper:
         I'm now going to show you the only JSON schema I will accept along with their
         associated python type.
             - salary: str
+            - programming_languages: List[str]
             - responsibilities: List[str]
             - requirements: List[str]
+            - extras: List[str]
             
         This is a strict requirement. Failure to follow this schema will result in a failed response.
             
@@ -180,7 +187,11 @@ class LinkedInScraper:
         Ensure you follow the JSON schema above.
             
         I've attached the data for you to parse below:
-        {data}
+        {{data}}
+        
+        Here is the job tite: {{job_title}}
+        
+        You must ensure all keys I specified are within the JSON
         """
         try:
             rsp = await session.post(
@@ -190,7 +201,9 @@ class LinkedInScraper:
                     "messages": [
                         {
                             "role": "user",
-                            "content": template.format(data=payload.content),
+                            "content": template.format(
+                                data=payload.content, job_title=payload.title
+                            ),
                         }
                     ],
                 },
@@ -205,7 +218,9 @@ class LinkedInScraper:
                 .replace("```", "")
             )
 
-            return json.loads(content)
+            rtn_value = json.loads(content)
+            # print(rtn_value.keys())
+            return rtn_value
         except (LLMError, json.JSONDecodeError) as e:
             raise LLMError(("" if isinstance(e, LLMError) else f"{type(e)}") + str(e))
 
@@ -235,17 +250,17 @@ class LinkedInScraper:
                     await asyncio.sleep(self._llm_rate_limit * (1 + random()))
 
             logger.info("Finished processing data")
-            
+
             if cleaned_data:
                 logger.info("Inserting data into database")
-                async with get_db_session() as sess:
-                    await sess.execute(
-                        insert(ScrapedData).values(
-                            [data.model_dump() for data in cleaned_data]
-                        )
-                    )
-                    await sess.commit()
-                
+                # async with get_db_session() as sess:
+                #     await sess.execute(
+                #         insert(ScrapedData).values(
+                #             [data.model_dump() for data in cleaned_data]
+                #         )
+                #     )
+                #     await sess.commit()
+
                 self._clean_queue.put_nowait(cleaned_data.copy())
                 logger.info("Data inserted into database")
                 cleaned_data.clear()

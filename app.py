@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from routes.data.route import data
 
 app = FastAPI()
 
@@ -10,3 +11,5 @@ app.add_middleware(
     allow_methods=["*"],
     allow_credentials=True,
 )
+
+app.include_router(data)

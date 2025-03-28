@@ -6,7 +6,13 @@ import warnings
 from httpx import AsyncClient, ReadTimeout
 from multiprocessing import Queue
 from random import random
-from playwright.async_api import async_playwright, Page, Locator, TimeoutError
+from playwright.async_api import (
+    async_playwright,
+    BrowserContext,
+    Page,
+    Locator,
+    TimeoutError,
+)
 from sqlalchemy import insert
 from typing import List
 
@@ -49,6 +55,8 @@ class LinkedInScraper:
         self._clean_queue = clean_queue
         self._llm_rate_limit = llm_rate_limit
         self._is_running = False
+        self._browser: BrowserContext = None
+        self._industry_page: Page = None
 
     async def init(self) -> None:
         asyncio.create_task(self._handle_llm())
@@ -59,7 +67,7 @@ class LinkedInScraper:
 
         try:
             async with async_playwright() as p:
-                browser = await p.chromium.launch_persistent_context(
+                self._browser = await p.chromium.launch_persistent_context(
                     user_data_dir=CANARY_USER_DATA_PATH,
                     headless=False,
                     executable_path=CANARY_EXE_PATH,
@@ -67,8 +75,9 @@ class LinkedInScraper:
                 self._is_running = True
                 logger.info("Browser initialised")
 
-                page = await browser.new_page()
-                logger.info("Page initialised")
+                page = await self._browser.new_page()
+                self._industry_page = await self._browser.new_page()
+                logger.info("Pages initialised")
 
                 logger.info("Heading to URL")
                 await page.goto(self._url)
@@ -139,6 +148,7 @@ class LinkedInScraper:
                 company=await page.locator(
                     ".job-details-jobs-unified-top-card__company-name a"
                 ).text_content(),
+                industry=await self._fetch_industry(page),
                 location=await (
                     await page.locator(
                         ".t-black--light.mt2.job-details-jobs-unified-top-card__tertiary-description-container span"
@@ -151,6 +161,18 @@ class LinkedInScraper:
 
         return payload
 
+    async def _fetch_industry(self, cur_page: Page) -> str:
+        url: str = await cur_page.locator(
+            ".job-details-jobs-unified-top-card__company-name a.HwfnrGwzbVhgqrHJQnWsTubRGppSSZmI"
+        ).get_attribute("href")
+        await self._industry_page.goto(url)
+        industry = await (
+            await self._industry_page.locator(
+                ".org-top-card-summary-info-list div"
+            ).all()
+        )[0].text_content()
+        return industry
+
     async def _fetch_attributes(
         self, payload: InitialExtractedObject, session: AsyncClient
     ) -> dict:
@@ -162,7 +184,8 @@ class LinkedInScraper:
         Attributes:
             - salary of the role. For example "$100,000 - $120,000" or "Competitive" 
             or "Not specified" or "$500 per hour"
-            - programming languages required for the role. You must only include these languages {PROGRAMMING_LANGUAGES}
+            - programming languages required for the role. You must only include these languages {PROGRAMMING_LANGUAGES}.
+            If you see swiftui, put swift into the list instead
             - responsibilities of the role as a list of strings. For example 
             ["Designing and developing applications", "Writing clean code"]
             - requirements of the role as a list of strings. For example 

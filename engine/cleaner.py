@@ -57,7 +57,6 @@ class Cleaner:
         return CleanedDataObject(**dumped).model_dump()
 
     def _parse_salary(self, salary: str) -> Optional[float]:
-        # print(salary, end=" -> ")
         remove_accessories = (
             lambda x: x.replace("$", "")
             .replace("£", "")
@@ -68,16 +67,14 @@ class Cleaner:
         # up to £60k
         k_exp = r"[£$€]\s*\d{1,3}k"
         if matched_string := regex.search(k_exp, salary):
-            # print(" 4 ", end="")
             return (
                 float(remove_accessories(matched_string.group()).replace("k", ""))
                 * 1000
             )
 
         # £60,000 - £70,000 annually
-        range_exp = r"£\d{1,3}(,\d{3})?\s*-\s*£\d{1,3}(,\d{3})?"
+        range_exp = r"[£$€]\d{1,3}(,\d{3})?\s*-\s*[£$€]\d{1,3}(,\d{3})?"
         if matched_string := regex.search(range_exp, salary):
-            # print(" 1 ", end="")
             num1, num2 = [
                 (
                     float(remove_accessories(item))
@@ -88,16 +85,9 @@ class Cleaner:
             ]
             return (num1 + num2) / 2
 
-        # you could make $60,000
-        nested_exp = r"[£$€]\s*\d{1,3},?\d{3}(?:\s*-\s*[£$€]?\d{1,3},?\d{3})?"
-        if matched_string := regex.search(nested_exp, salary):
-            # print(" 3 ", end="")
-            return float(remove_accessories(matched_string.group()))
-
         # £60,000 annually
         padding_exp = r"[£$€]\d{1,3}(?:,\d{3})?"
         if matched_string := regex.search(padding_exp, salary):
-            # print(" 2 ", end="")
             return float(remove_accessories(matched_string.group()))
 
         return None

@@ -9,16 +9,22 @@ class CustomBaseModel(BaseModel):
 
 class InitialExtractedObject(CustomBaseModel):
     url: str
-    title: str  # Job Title
+    title: str
     company: str
+    industry: str
     location: str
     content: str  # Page Content
+    
+    @field_serializer('industry')
+    def industry_serialiser(self, value: str) -> str:
+        return value.strip()
 
 
 class LLMExtractedObject(CustomBaseModel):
     url: str
     title: str
     company: str
+    industry: str
     salary: Optional[str] = None
     location: str
     programming_languages: List[str]
@@ -35,6 +41,7 @@ class CleanedDataObject(CustomBaseModel):
     url: str
     title: str
     company: str
+    industry: str
     salary: Optional[float] = None
     location: str
     programming_languages: str

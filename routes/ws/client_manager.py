@@ -1,5 +1,4 @@
 import asyncio
-import json
 from typing import List, Literal
 from fastapi import WebSocket
 from config import INDUSTRY_BAR_CHART_KEY_LIVE, PLANG_BAR_CHART_KEY_LIVE, REDIS_CLIENT
@@ -43,19 +42,23 @@ class ClientManger:
             await ps.subscribe(PLANG_BAR_CHART_KEY_LIVE)
             async for message in ps.listen():
                 if message["type"] == "message":
-                    loaded: dict[str, int] = json.loads(message["data"])
-
+                    print(message['data'])
                     async with self._lock:
                         for ws in self._plang_connections:
-                            await ws.send_text(loaded)
+                            try:
+                                await ws.send_bytes(message["data"])
+                            except RuntimeError:
+                                await ws.close()
 
     async def _listen_industry_bar_chart(self) -> None:
         async with REDIS_CLIENT.pubsub() as ps:
             await ps.subscribe(INDUSTRY_BAR_CHART_KEY_LIVE)
             async for message in ps.listen():
                 if message["type"] == "message":
-                    loaded: dict[str, int] = json.loads(message["data"])
-
+                    print(message['data'])
                     async with self._lock:
                         for ws in self._industry_connections:
-                            await ws.send_text(loaded)
+                            try:
+                                await ws.send_bytes(message["data"])
+                            except RuntimeError:
+                                await ws.close()

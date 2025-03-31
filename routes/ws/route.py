@@ -1,29 +1,33 @@
 from fastapi import APIRouter, WebSocket
 from .client_manager import ClientManger
 
-data = APIRouter(prefix="/data", tags=["data"])
+ws = APIRouter(prefix="/ws", tags=["ws"])
 manager = ClientManger()
 
 
-@data.websocket("/ws/programming-languages")
-async def programming_languages(ws: WebSocket):
+@ws.websocket("/programming-languages")
+async def programming_languages_ws(ws: WebSocket):
     await ws.accept()
     await manager.connect(ws, "plang")
 
     try:
         while True:
             await ws.receive()
+    except RuntimeError:
+        pass
     finally:
-        manager.disconnect(ws, "plang")
+        await manager.disconnect(ws, "plang")
 
 
-@data.websocket("/ws/industries")
-async def programming_languages(ws: WebSocket):
+@ws.websocket("/industries")
+async def industries_ws(ws: WebSocket):
     await ws.accept()
     await manager.connect(ws, "industry")
 
     try:
         while True:
             await ws.receive()
+    except RuntimeError:
+        pass
     finally:
-        manager.disconnect(ws, "industry")
+        await manager.disconnect(ws, "industry")

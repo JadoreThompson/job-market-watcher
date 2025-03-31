@@ -83,9 +83,9 @@ class LinkedInScraper:
                 await page.goto(self._url)
                 await self._handle(page)
                 logger.info("Scraping finished")
-                await asyncio.sleep(10**10)
+                # await asyncio.sleep(10**10)
         except Exception as e:
-            logger.error(f"An error occurred: {e}")
+            logger.error(f"An error occurred: {type(e)} {e}")
         finally:
             self._is_running = False
 
@@ -163,7 +163,7 @@ class LinkedInScraper:
 
     async def _fetch_industry(self, cur_page: Page) -> str:
         url: str = await cur_page.locator(
-            ".job-details-jobs-unified-top-card__company-name a.HwfnrGwzbVhgqrHJQnWsTubRGppSSZmI"
+            ".job-details-jobs-unified-top-card__company-name a"
         ).get_attribute("href")
         await self._industry_page.goto(url)
         industry = await (
@@ -242,7 +242,7 @@ class LinkedInScraper:
             )
 
             rtn_value = json.loads(content)
-            # print(rtn_value.keys())
+            
             return rtn_value
         except (LLMError, json.JSONDecodeError) as e:
             raise LLMError(("" if isinstance(e, LLMError) else f"{type(e)}") + str(e))
@@ -276,13 +276,13 @@ class LinkedInScraper:
 
             if cleaned_data:
                 logger.info("Inserting data into database")
-                # async with get_db_session() as sess:
-                #     await sess.execute(
-                #         insert(ScrapedData).values(
-                #             [data.model_dump() for data in cleaned_data]
-                #         )
-                #     )
-                #     await sess.commit()
+                async with get_db_session() as sess:
+                    await sess.execute(
+                        insert(ScrapedData).values(
+                            [data.model_dump() for data in cleaned_data]
+                        )
+                    )
+                    await sess.commit()
 
                 self._clean_queue.put_nowait(cleaned_data.copy())
                 logger.info("Data inserted into database")

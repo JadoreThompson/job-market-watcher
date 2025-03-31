@@ -44,7 +44,7 @@ class Cleaner:
 
                 logger.info("Finished cleaning data")
                 if cleaned_data:
-                    # await self._persist(cleaned_data)
+                    await self._persist(cleaned_data)
                     await self._transport(cleaned_data)
                     cleaned_data.clear()
             except Empty:
@@ -57,38 +57,28 @@ class Cleaner:
         return CleanedDataObject(**dumped).model_dump()
 
     def _parse_salary(self, salary: str) -> Optional[float]:
-        remove_accessories = (
-            lambda x: x.replace("$", "")
-            .replace("£", "")
-            .replace("€", "")
-            .replace(",", "")
-        )
+        remove_accessories = str.maketrans({"$": "", "£": "", "€": "", ",": ""})
+        salary = salary.translate(remove_accessories).strip().lower()
 
-        # up to £60k
-        k_exp = r"[£$€]\s*\d{1,3}k"
-        if matched_string := regex.search(k_exp, salary):
-            return (
-                float(remove_accessories(matched_string.group()).replace("k", ""))
-                * 1000
-            )
+        # Match "60k", "70k" (Ensure 5 digits at conversion)
+        if matched := regex.fullmatch(r"(\d{1,3})k", salary):
+            return float(matched.group(1)) * 1000
 
-        # £60,000 - £70,000 annually
-        range_exp = r"[£$€]\d{1,3}(,\d{3})?\s*-\s*[£$€]\d{1,3}(,\d{3})?"
-        if matched_string := regex.search(range_exp, salary):
-            num1, num2 = [
-                (
-                    float(remove_accessories(item))
-                    if len(item) > 4
-                    else float(remove_accessories(item)) * 1000
-                )
-                for item in matched_string.group().split("-")
-            ]
+        # Match "60,000 - 70,000"(Ensure each is at least 5 digits)
+        if matched := regex.fullmatch(
+            r"(\d{1,3}(?:\d{3})?)\s*-\s*(\d{1,3}(?:\d{3})?)", salary
+        ):
+            num1, num2 = map(float, matched.groups())
+            if num1 < 10000:
+                num1 *= 1000
+            if num2 < 10000:
+                num2 *= 1000
             return (num1 + num2) / 2
 
-        # £60,000 annually
-        padding_exp = r"[£$€]\d{1,3}(?:,\d{3})?"
-        if matched_string := regex.search(padding_exp, salary):
-            return float(remove_accessories(matched_string.group()))
+        # Match "60,000" or similar (Ensure at least 5 digits)
+        if matched := regex.fullmatch(r"\d{1,3}(?:\d{3})?", salary):
+            num = float(matched.group())
+            return num if num >= 10000 else num * 1000
 
         return None
 

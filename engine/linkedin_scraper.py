@@ -44,8 +44,8 @@ class LinkedInScraper:
         url: str,
         clean_queue: Queue,
         *,
-        sleep: int = 2,
-        timeout: int = 5,
+        sleep: float = 2.0,
+        timeout: float = 5.0,
         llm_rate_limit: int = 1,
     ) -> None:
         self._url = url

@@ -7,11 +7,15 @@ manager = ClientManger()
 
 @ws.websocket("/programming-languages")
 async def programming_languages_ws(ws: WebSocket):
+    print(1)
     await ws.accept()
+    print(2)
     await manager.connect(ws, "plang")
+    print(3)
 
     try:
         while True:
+            print(4)
             await ws.receive()
     except RuntimeError:
         pass

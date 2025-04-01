@@ -1,6 +1,6 @@
-import uvicorn
-import time
 import asyncio
+import time
+import uvicorn
 
 from multiprocessing import Process, Queue
 from engine.chart_generator import ChartGenerator
@@ -15,7 +15,10 @@ def server() -> None:
 def scraper(queue: Queue) -> None:
     asyncio.run(
         LinkedInScraper(
-            "https://www.linkedin.com/jobs/search/?&keywords=software%20engineer", queue
+            "https://www.linkedin.com/jobs/search/?&keywords=software%20engineer",
+            queue,
+            sleep=0.5,
+            timeout=1.0
         ).init()
     )
 

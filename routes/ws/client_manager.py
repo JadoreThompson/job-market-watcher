@@ -42,7 +42,6 @@ class ClientManger:
             await ps.subscribe(PLANG_BAR_CHART_KEY_LIVE)
             async for message in ps.listen():
                 if message["type"] == "message":
-                    print(message['data'])
                     async with self._lock:
                         for ws in self._plang_connections:
                             try:
@@ -55,7 +54,6 @@ class ClientManger:
             await ps.subscribe(INDUSTRY_BAR_CHART_KEY_LIVE)
             async for message in ps.listen():
                 if message["type"] == "message":
-                    print(message['data'])
                     async with self._lock:
                         for ws in self._industry_connections:
                             try:

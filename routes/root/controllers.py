@@ -1,5 +1,5 @@
 import json
-from typing import List, Optional
+from typing import Optional
 from sqlalchemy import select, distinct, func
 
 from db_models import CleanedData
@@ -35,41 +35,39 @@ async def fetch_industries_chart_data() -> dict:
     return rtn_value
 
 
-async def fetch_plang_table_data(location: Optional[str] = None) -> List[Row]:
-    query = select(CleanedData.programming_languages, CleanedData.salary)
+async def fetch_plang_table_data(
+    location: Optional[str] = None,
+) -> tuple[Optional[Row], ...]:
+    query = select(CleanedData.programming_languages, CleanedData.salary).where(
+        CleanedData.salary != None
+    )
+
     if location is not None:
-        query = query.where(CleanedData.location.like(f"'%{location.strip()}'%"))
+        query = query.where(CleanedData.location.like(f"{location.strip()}"))
+
+    lang_map: dict[str, list[float]] = {}
 
     async with get_db_session() as sess:
-        res = await sess.execute(query)
-        data = res.all()
-    print(data)
-    print("******************")
-    rtn_value: dict[str, list[float]] = {}
+        res = await sess.stream(query)
 
-    for tup in data:
-        if tup[1] is None:
-            continue
+        async for langs, salary in res:
+            for lang in json.loads(langs):
+                lang_map.setdefault(lang, [])
+                lang_map[lang].append(salary)
 
-        for lang in json.loads(tup[0]):
-            rtn_value.setdefault(lang, [])
-            rtn_value[lang].append(tup[1])
-
-    return (
-        [
-            Row(
-                name=lang,
-                average_salary=sum(rtn_value[lang]) / len(rtn_value[lang]),
-                median_salary=rtn_value[lang][len(rtn_value[lang]) // 2],
-            )
-            for lang in rtn_value
-        ]
-        if rtn_value
-        else []
+    return tuple(
+        Row(
+            name=lang,
+            average_salary=sum(lang_map[lang]) / len(lang_map[lang]),
+            median_salary=lang_map[lang][len(lang_map[lang]) // 2],
+        )
+        for lang in lang_map
     )
 
 
-async def fetch_industries_table_data(location: Optional[str] = None) -> List[Row]:
+async def fetch_industries_table_data(
+    location: Optional[str] = None,
+) -> tuple[Optional[Row], ...]:
     query = select(
         distinct(CleanedData.industry),
         func.sum(CleanedData.salary) / func.count(CleanedData.industry),
@@ -80,15 +78,10 @@ async def fetch_industries_table_data(location: Optional[str] = None) -> List[Ro
         query = query.where(CleanedData.location.like(location))
 
     async with get_db_session() as sess:
-        res = await sess.execute(query.group_by(CleanedData.industry))
-        data = res.all()
+        res = await sess.stream(query.group_by(CleanedData.industry))
 
-    rtn_value: list[Row] = []
-
-    for name, avg_sal, med_sal in data:
-        if avg_sal and med_sal:
-            rtn_value.append(
-                Row(name=name, average_salary=float(avg_sal), median_salary=med_sal)
-            )
-
-    return rtn_value
+        return tuple(
+            Row(name=name, average_salary=float(avg_sal), median_salary=med_sal)
+            async for name, avg_sal, med_sal in res
+            if avg_sal and med_sal
+        )

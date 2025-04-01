@@ -1,2 +1,0 @@
-- extract salary from pills section
-- reduce exc rate when regex searching salary

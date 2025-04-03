@@ -4,7 +4,7 @@ import uvicorn
 
 from multiprocessing import Process, Queue
 from engine.chart_generator import ChartGenerator
-from engine.scrapers.linkedin_scraper import LinkedInScraper
+from engine.scrapers import LinkedInScraper
 from engine.cleaner import Cleaner
 
 

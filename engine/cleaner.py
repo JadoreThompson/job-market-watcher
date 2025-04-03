@@ -53,7 +53,6 @@ class Cleaner:
     def clean(self, data: LLMExtractedObject) -> dict:
         dumped = data.model_dump()
         dumped["salary"] = self._parse_salary(dumped["salary"])
-        # print(dumped["salary"])
         return CleanedDataObject(**dumped).model_dump()
 
     def _parse_salary(self, salary: str) -> Optional[float]:

@@ -65,8 +65,8 @@ class LinkedInScraper:
     async def run_scraper(self) -> None:
         await asyncio.sleep(random() * 50)  # Rate limit prevention
 
-        try:
-            async with async_playwright() as p:
+        async with async_playwright() as p:
+            try:
                 self._browser = await p.chromium.launch_persistent_context(
                     user_data_dir=CANARY_USER_DATA_PATH,
                     headless=False,
@@ -83,11 +83,14 @@ class LinkedInScraper:
                 await page.goto(self._url)
                 await self._handle(page)
                 logger.info("Scraping finished")
-                # await asyncio.sleep(10**10)
-        except Exception as e:
-            logger.error(f"An error occurred: {type(e)} {e}")
-        finally:
-            self._is_running = False
+                print("Sraping Finished")
+            except Exception as e:
+                msg = f"An error occurred: {type(e)} {e}"
+                warnings.warn(msg)
+                logger.error(msg)
+            finally:
+                self._is_running = False
+                await asyncio.sleep(10**10)
 
     async def _handle(self, page: Page) -> None:
         cur_page = 0

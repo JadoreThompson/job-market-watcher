@@ -1,3 +1,4 @@
+from typing import Any, Iterable
 from routes.utils import CustomBase
 from pydantic import field_serializer
 
@@ -16,3 +17,11 @@ class Row(CustomBase):
                 reversed_value.insert(i, ",")
 
         return "".join(reversed_value[::-1])
+
+
+class PaginatedResponse(CustomBase):
+    data: tuple[Any] | list[Any]
+    has_next_page: bool
+    
+class MaxPagesPaginatedResponse(PaginatedResponse):
+    max_pages: int

@@ -17,8 +17,8 @@ def scraper(queue: Queue) -> None:
         LinkedInScraper(
             "https://www.linkedin.com/jobs/search/?&keywords=software%20engineer",
             queue,
-            sleep=0.5,
-            timeout=1.0
+            # sleep=0.5,
+            # timeout=1.0,
         ).init()
     )
 

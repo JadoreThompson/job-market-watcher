@@ -6,6 +6,16 @@ from db_models import CleanedData
 from utils.db import get_db_session
 from .models import Row
 
+PAGE_SIZE = 10
+LANG_MAP: dict[str, list[float]] = {}
+
+
+def calc_pages(total_rows: int) -> int:
+    try:
+        return total_rows // PAGE_SIZE + (0 if total_rows % PAGE_SIZE == 0 else 1)
+    except ZeroDivisionError:
+        return 0
+
 
 async def fetch_plang_chart_data() -> dict:
     async with get_db_session() as sess:
@@ -36,38 +46,39 @@ async def fetch_industries_chart_data() -> dict:
 
 
 async def fetch_plang_table_data(
-    location: Optional[str] = None,
-) -> tuple[Optional[Row], ...]:
-    query = select(CleanedData.programming_languages, CleanedData.salary).where(
-        CleanedData.salary != None
-    )
+    location: Optional[str] = None, page: Optional[int] = 0
+) -> tuple[tuple[Row], int]:
+    global LANG_MAP
 
-    if location is not None:
-        query = query.where(CleanedData.location.like(f"{location.strip()}"))
+    if page == 0 or not LANG_MAP:
+        query = select(CleanedData.programming_languages, CleanedData.salary).where(
+            CleanedData.salary != None
+        )
 
-    lang_map: dict[str, list[float]] = {}
+        if location is not None:
+            query = query.where(CleanedData.location.like(f"{location.strip()}"))
 
-    async with get_db_session() as sess:
-        res = await sess.stream(query)
+        async with get_db_session() as sess:
+            res = await sess.stream(query)
 
-        async for langs, salary in res:
-            for lang in json.loads(langs):
-                lang_map.setdefault(lang, [])
-                lang_map[lang].append(salary)
+            async for langs, salary in res:
+                for lang in json.loads(langs):
+                    LANG_MAP.setdefault(lang.lower(), [])
+                    LANG_MAP[lang.lower()].append(salary)
 
     return tuple(
         Row(
-            name=lang,
-            average_salary=sum(lang_map[lang]) / len(lang_map[lang]),
-            median_salary=lang_map[lang][len(lang_map[lang]) // 2],
+            name=key,
+            average_salary=sum(LANG_MAP[key]) / len(LANG_MAP[key]),
+            median_salary=LANG_MAP[key][len(LANG_MAP[key]) // 2],
         )
-        for lang in lang_map
-    )
+        for key in list(LANG_MAP.keys())[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
+    ), calc_pages(len(LANG_MAP))
 
 
 async def fetch_industries_table_data(
-    location: Optional[str] = None,
-) -> tuple[Optional[Row], ...]:
+    location: Optional[str] = None, page: Optional[int] = 0
+) -> tuple[tuple[Row, ...], int]:
     query = select(
         distinct(CleanedData.industry),
         func.sum(CleanedData.salary) / func.count(CleanedData.industry),
@@ -76,12 +87,22 @@ async def fetch_industries_table_data(
 
     if location is not None:
         query = query.where(CleanedData.location.like(location))
+    query = query.group_by(CleanedData.industry)
 
     async with get_db_session() as sess:
-        res = await sess.stream(query.group_by(CleanedData.industry))
-
-        return tuple(
-            Row(name=name, average_salary=float(avg_sal), median_salary=med_sal)
-            async for name, avg_sal, med_sal in res
-            if avg_sal and med_sal
+        data_result = await sess.stream(
+            query.offset(page * PAGE_SIZE).limit(PAGE_SIZE + 1)
         )
+
+        result: list[Row] = []
+        async for name, avg_sal, med_sal in data_result:
+            if avg_sal and med_sal:
+                result.append(
+                    Row(name=name, average_salary=float(avg_sal), median_salary=med_sal)
+                )
+
+        row_count: int = (
+            await sess.execute(select(func.count()).select_from(query.subquery()))
+        ).first()[0]
+
+    return tuple(result), calc_pages(row_count)

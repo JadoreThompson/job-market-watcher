@@ -24,5 +24,5 @@ class IndeedScraper(BaseScraper):
     async def _run_scraper(self) -> None:
         async with self._init_browser():
             page = await self._browser.new_page()
-            await page.goto(self.url)
+            await page.goto(self._url)
             await asyncio.sleep(10**3)

@@ -1,48 +1,32 @@
 import asyncio
 import json
 import logging
+import multiprocessing
 import warnings
 
+from contextlib import asynccontextmanager
 from httpx import AsyncClient, ReadTimeout
-from multiprocessing import Queue
+from playwright.async_api import async_playwright, BrowserContext, Page, Playwright
 from random import random
-from playwright.async_api import (
-    async_playwright,
-    BrowserContext,
-    Page,
-    Locator,
-    TimeoutError,
-)
 from sqlalchemy import insert
-from typing import List
+from typing import AsyncGenerator, overload
 
 from config import CANARY_EXE_PATH, CANARY_USER_DATA_PATH, LLM_API_KEY, LLM_BASE_URL
 from db_models import ScrapedData
+from engine.utils import PROGRAMMING_LANGUAGES
 from utils.db import get_db_session
-from .models import LLMExtractedObject, InitialExtractedObject
-from .exc import LLMError, ScrapingError
-from .utils import PROGRAMMING_LANGUAGES
+from ..exc import LLMError
+from ..models import InitialExtractedObject, LLMExtractedObject
+
 
 logger = logging.getLogger(__name__)
 
 
-class LinkedInScraper:
-    """
-    Scraper designed to scrape LinkedIn job listings.
-
-    Attributes:
-        url (str): The URL to scrape
-        clean_queue (Queue): The queue used to transport data to the cleaner
-        sleep (int): The time to sleep between scraping individual cards
-        timeout (int): The time to wait before going to the next page
-        queue (asyncio.Queue): The queue used to transport data to the LLM handler
-        llm_rate_limit (int): The rate limit in seconds for LLM API requests
-    """
-
+class BaseScraper:
     def __init__(
         self,
         url: str,
-        clean_queue: Queue,
+        clean_queue: multiprocessing.Queue,
         *,
         sleep: float = 2.0,
         timeout: float = 5.0,
@@ -58,13 +42,13 @@ class LinkedInScraper:
         self._browser: BrowserContext = None
         self._industry_page: Page = None
 
-    async def init(self) -> None:
+    async def run(self) -> None:
         asyncio.create_task(self._handle_llm())
-        await self.run_scraper()
+        await self._run_scraper()
 
-    async def run_scraper(self) -> None:
+    @asynccontextmanager
+    async def _init_browser(self) -> AsyncGenerator[Playwright, None]:
         await asyncio.sleep(random() * 50)  # Rate limit prevention
-
         async with async_playwright() as p:
             try:
                 self._browser = await p.chromium.launch_persistent_context(
@@ -73,108 +57,23 @@ class LinkedInScraper:
                     executable_path=CANARY_EXE_PATH,
                 )
                 self._is_running = True
-                logger.info("Browser initialised")
-
-                page = await self._browser.new_page()
-                self._industry_page = await self._browser.new_page()
-                logger.info("Pages initialised")
-
-                logger.info("Heading to URL")
-                await page.goto(self._url)
-                await self._handle(page)
-                logger.info("Scraping finished")
-                print("Sraping Finished")
+                yield p
             except Exception as e:
-                msg = f"An error occurred: {type(e)} {e}"
+                msg = f"An error occurred casuing browser to collapse: {type(e)} {e}"
                 warnings.warn(msg)
                 logger.error(msg)
             finally:
                 self._is_running = False
                 await asyncio.sleep(10**10)
 
-    async def _handle(self, page: Page) -> None:
-        cur_page = 0
-        finished = False
+    # Function to create page and other class specific data
+    # as well as calling self._handle.
+    @overload
+    async def _run_scraper(self) -> None: ...
 
-        while not finished:
-            await page.wait_for_selector(".scaffold-layout__list")
-            if not await self._scrape_page(page):
-                break
-            logger.info("Finished scrape on individual cards ")
-
-            await asyncio.sleep(self._timeout)
-            cur_page += 1
-            await page.goto(self._url + f"&start={cur_page * 25}")
-
-    async def _scrape_page(self, page: Page) -> None:
-        cards = await self._locate_cards(page)
-        if not cards:
-            logger.info("No cards located")
-            return False
-
-        logger.info("Beginning scrape on individual cards")
-
-        data: List[InitialExtractedObject] = []
-
-        for card in cards:
-            try:
-                data.append(await self._scrape_card(page, card))
-                await asyncio.sleep(self._sleep)
-
-                if dimensions := await card.bounding_box():
-                    await page.mouse.wheel(0, dimensions["height"])
-            except ScrapingError as e:
-                m = f"Error whilst scraping: {str(e)}"
-                warnings.warn(m)
-
-        if data:
-            self._queue.put_nowait(data)
-
-        return True
-
-    async def _locate_cards(self, page: Page) -> List[Locator]:
-        cards = await page.locator("li[data-occludable-job-id]").all()
-        logger.info(f"Found {len(cards)} cards")
-        return cards
-
-    async def _scrape_card(
-        self, page: Page, li_card: Locator
-    ) -> InitialExtractedObject:
-        await li_card.click()
-
-        try:
-            payload = InitialExtractedObject(
-                url=page.url,
-                title=await page.locator(
-                    ".t-24.job-details-jobs-unified-top-card__job-title a"
-                ).text_content(),
-                company=await page.locator(
-                    ".job-details-jobs-unified-top-card__company-name a"
-                ).text_content(),
-                industry=await self._fetch_industry(page),
-                location=await (
-                    await page.locator(
-                        ".t-black--light.mt2.job-details-jobs-unified-top-card__tertiary-description-container span"
-                    ).all()
-                )[0].text_content(),
-                content=await page.locator("div.jobs-box__html-content").inner_html(),
-            )
-        except (TimeoutError, IndexError) as e:
-            raise ScrapingError(str(e))
-
-        return payload
-
-    async def _fetch_industry(self, cur_page: Page) -> str:
-        url: str = await cur_page.locator(
-            ".job-details-jobs-unified-top-card__company-name a"
-        ).get_attribute("href")
-        await self._industry_page.goto(url)
-        industry = await (
-            await self._industry_page.locator(
-                ".org-top-card-summary-info-list div"
-            ).all()
-        )[0].text_content()
-        return industry
+    # Infinite loop function to scrape all cards and pages
+    @overload
+    async def _handle(self, page: Page) -> None: ...
 
     async def _fetch_attributes(
         self, payload: InitialExtractedObject, session: AsyncClient
@@ -245,19 +144,19 @@ class LinkedInScraper:
             )
 
             rtn_value = json.loads(content)
-            
+
             return rtn_value
         except (LLMError, json.JSONDecodeError) as e:
             raise LLMError(("" if isinstance(e, LLMError) else f"{type(e)}") + str(e))
 
     async def _handle_llm(self) -> None:
-        cleaned_data: List[LLMExtractedObject] = []
+        cleaned_data: list[LLMExtractedObject] = []
 
         while not self._is_running:
             await asyncio.sleep(1)
 
         while self._is_running:
-            payloads: List[InitialExtractedObject] = await self._queue.get()
+            payloads: list[InitialExtractedObject] = await self._queue.get()
 
             async with AsyncClient(
                 headers={"Authorization": f"Bearer {LLM_API_KEY}"}
@@ -278,7 +177,7 @@ class LinkedInScraper:
             logger.info("Finished processing data")
 
             if cleaned_data:
-                logger.info("Inserting data into database")
+                logger.info("Inserting scraped data into database")
                 async with get_db_session() as sess:
                     await sess.execute(
                         insert(ScrapedData).values(
@@ -288,7 +187,7 @@ class LinkedInScraper:
                     await sess.commit()
 
                 self._clean_queue.put_nowait(cleaned_data.copy())
-                logger.info("Data inserted into database")
+                logger.info("Scraped data ata inserted into database")
                 cleaned_data.clear()
 
     @property

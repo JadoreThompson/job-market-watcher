@@ -4,7 +4,7 @@ import uvicorn
 
 from multiprocessing import Process, Queue
 from engine.chart_generator import ChartGenerator
-from engine.linkedin_scraper import LinkedInScraper
+from engine.scrapers.linkedin_scraper import LinkedInScraper
 from engine.cleaner import Cleaner
 
 
@@ -19,7 +19,7 @@ def scraper(queue: Queue) -> None:
             queue,
             # sleep=0.5,
             # timeout=1.0,
-        ).init()
+        ).run()
     )
 
 

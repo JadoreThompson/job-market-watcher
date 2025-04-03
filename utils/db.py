@@ -12,7 +12,7 @@ smaker = sessionmaker(bind=DB_ENGINE, class_=AsyncSession, expire_on_commit=Fals
 
 
 def write_sqlalchemy_url() -> None:
-    """Writes db url into the alamebic.ini file"""
+    """Writes db url into the alamebic.ini file."""
     sqlalc_uri = DB_URL.replace("+asyncpg", "").replace("%", "%%")
     config = configparser.ConfigParser(interpolation=None)
     config.read("alembic.ini")
@@ -24,7 +24,7 @@ def write_sqlalchemy_url() -> None:
 
 
 def remove_sqlalchemy_url():
-    """removes the db url into the alamebic.ini file"""
+    """Removes the db url into the alamebic.ini file."""
     config = configparser.ConfigParser(interpolation=None)
     config.read("alembic.ini")
     config["alembic"].update({"sqlalchemy.url": ""})

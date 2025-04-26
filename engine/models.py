@@ -11,20 +11,22 @@ class InitialExtractedObject(CustomBaseModel):
     url: str
     title: str
     company: str
-    industry: str
+    industry: Optional[str] = None
     location: str
     content: str  # Page Content
-    
-    @field_serializer('industry')
-    def industry_serialiser(self, value: str) -> str:
-        return value.strip()
+
+    @field_serializer("industry")
+    def industry_serialiser(self, value) -> Optional[str]:
+        if value:
+            return value.strip()
+        return value
 
 
 class LLMExtractedObject(CustomBaseModel):
     url: str
     title: str
     company: str
-    industry: str
+    industry: Optional[str] = None
     salary: Optional[str] = None
     location: str
     programming_languages: List[str]
@@ -32,20 +34,21 @@ class LLMExtractedObject(CustomBaseModel):
     requirements: List[str]
     extras: Optional[List[str]] = None
 
-    @field_serializer("programming_languages", "responsibilities", "requirements", "extras")
+    @field_serializer(
+        "programming_languages", "responsibilities", "requirements", "extras"
+    )
     def serialize_list(self, value: Optional[List[str]]) -> str:
         return json.dumps(value) if value is not None else None
-    
+
 
 class CleanedDataObject(CustomBaseModel):
     url: str
     title: str
     company: str
-    industry: str
+    industry: Optional[str] = None
     salary: Optional[float] = None
     location: str
     programming_languages: str
     responsibilities: Optional[str] = None
     requirements: str
     extras: Optional[str] = None
-    

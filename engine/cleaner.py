@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import insert
 from config import CLEANED_DATA_KEY, REDIS_CLIENT
 from db_models import CleanedData
 from utils.db import get_db_session
-from .models import LLMExtractedObject, CleanedDataObject
+from .models import LLMExtractedObject
 
 
 logger = logging.getLogger(__name__)
@@ -32,27 +32,36 @@ class Cleaner:
 
     async def run(self) -> None:
         cleaned_data = []
+        dump_data: list[dict] = [] # temporary
 
-        while True:
-            try:
-                extracted_data: List[LLMExtractedObject] = self._queue.get(block=True)
-                logger.info(f"Cleaning {len(extracted_data)} items")
+        try:
+            while True:
+                try:
+                    extracted_data: List[LLMExtractedObject] = self._queue.get(
+                        block=True
+                    )
+                    logger.info(f"Cleaning {len(extracted_data)} items")
 
-                for data in extracted_data:
-                    cleaned_data.append(self.clean(data))
+                    for data in extracted_data:
+                        dump_data.append(data.model_dump())
+                        cleaned_data.append(self.clean(data))
 
-                logger.info("Finished cleaning data")
-                if cleaned_data:
-                    await self._persist(cleaned_data)
-                    await self._transport(cleaned_data)
-                    cleaned_data.clear()
-            except Empty:
-                await asyncio.sleep(self.sleep)
+                    logger.info("Finished cleaning batch")
+                    if cleaned_data:
+                        await self._persist(cleaned_data)
+                        await self._transport(cleaned_data)
+                        cleaned_data.clear()
+                except Empty:
+                    await asyncio.sleep(self.sleep)
+        finally:
+            print("Cleaning finished")
+            with open("data.json", "w") as f:
+                json.dump(dump_data, f, indent=4)
 
     def clean(self, data: LLMExtractedObject) -> dict:
         dumped = data.model_dump()
         dumped["salary"] = self._parse_salary(dumped["salary"])
-        return CleanedDataObject(**dumped).model_dump()
+        return dumped
 
     def _parse_salary(self, salary: str) -> Optional[float]:
         remove_accessories = str.maketrans({"$": "", "£": "", "€": "", ",": ""})
@@ -82,9 +91,12 @@ class Cleaner:
 
     async def _persist(self, data: List[dict]) -> None:
         logger.info("Inserting cleaned data into the database")
+        
         async with get_db_session() as sess:
             await sess.execute(
-                insert(CleanedData).values(data).on_conflict_do_nothing()
+                insert(CleanedData)
+                .values(data)
+                .on_conflict_do_nothing("cleaned_data_url_key")
             )
             await sess.commit()
 

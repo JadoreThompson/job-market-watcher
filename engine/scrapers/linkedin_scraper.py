@@ -3,11 +3,7 @@ import logging
 import multiprocessing
 import warnings
 
-from playwright.async_api import (
-    Page,
-    Locator,
-    TimeoutError,
-)
+from playwright.async_api import Page, Locator, TimeoutError
 from .base_scraper import BaseScraper
 from ..exc import ScrapingError
 from ..models import InitialExtractedObject
@@ -59,9 +55,10 @@ class LinkedInScraper(BaseScraper):
             logger.info("Scraping finished")
 
     async def _handle(self, page: Page) -> None:
-        cur_page = 0
+        cur_page: int = 0
 
         while True:
+            # Waiting for cards container
             await page.wait_for_selector(".scaffold-layout__list")
 
             if not await self._scrape_page(page):
@@ -74,7 +71,7 @@ class LinkedInScraper(BaseScraper):
             await page.goto(self._url + f"&start={cur_page * 25}")
 
     async def _scrape_page(self, page: Page) -> None:
-        cards = await self._locate_cards(page)
+        cards: list[Locator] = await self._locate_cards(page)
         if not cards:
             logger.info("No cards located")
             return False
@@ -100,17 +97,17 @@ class LinkedInScraper(BaseScraper):
         return True
 
     async def _locate_cards(self, page: Page) -> list[Locator]:
-        cards = await page.locator("li[data-occludable-job-id]").all()
+        cards: list[Locator] = await page.locator("li[data-occludable-job-id]").all()
         logger.info(f"Found {len(cards)} cards")
         return cards
 
     async def _scrape_card(
-        self, page: Page, li_card: Locator
+        self, page: Page, card: Locator
     ) -> InitialExtractedObject:
-        await li_card.click()
+        await card.click()
 
         try:
-            payload = InitialExtractedObject(
+            return InitialExtractedObject(
                 url=page.url,
                 title=await page.locator(
                     ".t-24.job-details-jobs-unified-top-card__job-title a"
@@ -129,16 +126,17 @@ class LinkedInScraper(BaseScraper):
         except (TimeoutError, IndexError) as e:
             raise ScrapingError(str(e))
 
-        return payload
-
     async def _fetch_industry(self, cur_page: Page) -> str:
         url: str = await cur_page.locator(
             ".job-details-jobs-unified-top-card__company-name a"
         ).get_attribute("href")
+        
         await self._industry_page.goto(url)
-        industry = await (
+        
+        industry: str = await (
             await self._industry_page.locator(
                 ".org-top-card-summary-info-list div"
             ).all()
         )[0].text_content()
+        
         return industry

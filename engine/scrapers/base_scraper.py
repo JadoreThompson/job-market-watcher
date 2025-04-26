@@ -43,12 +43,20 @@ class BaseScraper:
         self._industry_page: Page = None
 
     async def run(self) -> None:
-        asyncio.create_task(self._handle_llm())
-        await self._run_scraper()
-
+        try:
+            asyncio.create_task(self._handle_llm())
+            await self._run_scraper()
+        except Exception as e:
+            msg = f"An error occurred casuing browser to collapse: {type(e)} {e}"
+            logger.error(msg)
+        finally:
+            while not self._queue.empty():
+                await asyncio.sleep(1)
+            self._is_running = False
+            
     @asynccontextmanager
     async def _init_browser(self) -> AsyncGenerator[Playwright, None]:
-        await asyncio.sleep(random() * 50)  # Rate limit prevention
+        await asyncio.sleep(random() * 10)  # Rate limit prevention
         async with async_playwright() as p:
             try:
                 self._browser = await p.chromium.launch_persistent_context(
@@ -61,9 +69,6 @@ class BaseScraper:
             except Exception as e:
                 msg = f"An error occurred casuing browser to collapse: {type(e)} {e}"
                 warnings.warn(msg)
-                logger.error(msg)
-            finally:
-                self._is_running = False
                 await asyncio.sleep(10**10)
 
     # Function to create page and other class specific data
@@ -137,13 +142,13 @@ class BaseScraper:
             if rsp.status_code != 200:
                 raise LLMError(f"Failed to fetch attributes. Status: {rsp.status_code}")
 
-            content = (
+            content: str = (
                 rsp.json()["choices"][0]["message"]["content"]
                 .replace("```json", "")
                 .replace("```", "")
             )
 
-            rtn_value = json.loads(content)
+            rtn_value: dict = json.loads(content)
 
             return rtn_value
         except (LLMError, json.JSONDecodeError) as e:
@@ -177,18 +182,22 @@ class BaseScraper:
             logger.info("Finished processing data")
 
             if cleaned_data:
-                logger.info("Inserting scraped data into database")
-                async with get_db_session() as sess:
-                    await sess.execute(
-                        insert(ScrapedData).values(
-                            [data.model_dump() for data in cleaned_data]
-                        )
-                    )
-                    await sess.commit()
-
-                self._clean_queue.put_nowait(cleaned_data.copy())
-                logger.info("Scraped data ata inserted into database")
+                await self._persist(cleaned_data)
                 cleaned_data.clear()
+
+    async def _persist(self, data: list[LLMExtractedObject]) -> None:
+        logger.info("Inserting scraped data into database")
+        async with get_db_session() as sess:
+            await sess.execute(
+                insert(ScrapedData).values(
+                    [d.model_dump() for d in data]
+                )
+            )
+            await sess.commit()
+
+        print(f"Pushing {len(data)} items to clean queue")
+        self._clean_queue.put_nowait(data.copy())
+        logger.info("Scraped data ata inserted into database")
 
     @property
     def url(self) -> str:

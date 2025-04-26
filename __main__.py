@@ -4,41 +4,39 @@ import uvicorn
 
 from multiprocessing import Process, Queue
 from engine.chart_generator import ChartGenerator
-from engine.scrapers import LinkedInScraper
+from engine.scrapers import GoogleJobsScraper, LinkedInScraper
 from engine.cleaner import Cleaner
 
 
-def server() -> None:
+def run_server() -> None:
     uvicorn.run("app:app", port=8000)
 
 
-def scraper(queue: Queue) -> None:
+def run_scraper(queue: Queue) -> None:
     asyncio.run(
-        LinkedInScraper(
-            "https://www.linkedin.com/jobs/search/?&keywords=software%20engineer",
+        GoogleJobsScraper(
+            "https://www.google.com/search?q=software%20engineer%20internship&oq=software%20engineer%20internship%20&gs_lcrp=EgZjaHJvbWUqBggAEEUYOzIGCAAQRRg7MgYIARBFGDsyBwgCEAAYgAQyBwgDEAAYgAQyBggEEEUYQTIGCAUQRRg8MgYIBhBFGEEyBggHEC4YQNIBCDYwNjRqMGoxqAIIsAIB8QX4SipSyeWHlg&sourceid=chrome&ie=UTF-8&jbr=sep:0&udm=8&ved=2ahUKEwi_4-C6u_SMAxV3zwIHHdJJGO8Q3L8LegQIIxAN#vhid=vt%3D20/docid%3DSCXfdu4XPPzq7xj9AAAAAA%3D%3D&vssid=jobs-detail-viewer",
             queue,
-            # sleep=0.5,
-            # timeout=1.0,
         ).run()
     )
 
 
-def cleaner(queue: Queue) -> None:
+def run_cleaner(queue: Queue) -> None:
     asyncio.run(Cleaner(queue).run())
 
 
-def chart_generator() -> None:
+def run_chart_generator() -> None:
     asyncio.run(ChartGenerator().run())
 
 
 def main() -> None:
-    clean_queue = Queue()
+    queue = Queue()
 
     process_kwargs = (
-        {"target": server, "args": (), "name": "server"},
-        {"target": scraper, "args": (clean_queue,), "name": "scraper"},
-        {"target": cleaner, "args": (clean_queue,), "name": "cleaner"},
-        {"target": chart_generator, "args": (), "name": "chart_generator"},
+        # {"target": run_server, "args": (), "name": "server"},
+        {"target": run_scraper, "args": (queue,), "name": "scraper"},
+        {"target": run_cleaner, "args": (queue,), "name": "cleaner"},
+        # {"target": run_chart_generator, "args": (), "name": "chart_generator"},
     )
 
     processes = [Process(**kwargs) for kwargs in process_kwargs]
@@ -51,20 +49,20 @@ def main() -> None:
             for i in range(len(processes)):
                 if not processes[i].is_alive():
                     print(
-                        f"[main] {process_kwargs[i]['name']} PID: {processes[i].pid} has shut down"
+                        f"[main] Name: {process_kwargs[i]['name']} PID: {processes[i].pid} has shut down"
                     )
                     processes[i].kill()
                     processes[i].join()
                     processes[i] = Process(**process_kwargs[i])
                     processes[i].start()
                     print(f"[main] Restarted {process_kwargs[i]['name']}")
-            time.sleep(5)
+            time.sleep(1)
     except BaseException:
         print("[main] Shutting down...")
 
         for i in range(len(processes)):
             print(
-                f"[main] Shutting down {process_kwargs[i]['name']} PID: {processes[i].pid}"
+                f"[main] Shutting down Name: {process_kwargs[i]['name']} PID: {processes[i].pid}"
             )
             processes[i].terminate()
             processes[i].join()
